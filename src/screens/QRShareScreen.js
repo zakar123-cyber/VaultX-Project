@@ -9,13 +9,17 @@ export default function QRShareScreen() {
     const { getExportData } = useVault();
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
+    const [pin, setPin] = useState('');
 
     useEffect(() => {
-        loadData();
+        // Generate random 4-digit PIN
+        const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+        setPin(newPin);
+        loadData(newPin);
     }, []);
 
-    const loadData = async () => {
-        const exportData = await getExportData();
+    const loadData = async (pinToUse) => {
+        const exportData = await getExportData(pinToUse);
         if (exportData) {
             if (exportData.length > 2500) {
                 setError('Vault data is too large for a single QR code.');
@@ -30,6 +34,14 @@ export default function QRShareScreen() {
     return (
         <ThemedView style={styles.container}>
             <ThemedText type="header" style={styles.title}>Share Vault</ThemedText>
+
+            {/* PIN Display */}
+            <View style={styles.pinContainer}>
+                <ThemedText style={styles.pinLabel}>Transfer PIN:</ThemedText>
+                <ThemedText type="header" style={styles.pinValue}>{pin}</ThemedText>
+                <ThemedText style={styles.pinHint}>Enter this on the receiver's phone</ThemedText>
+            </View>
+
             <View style={styles.qrContainer}>
                 {error ? (
                     <ThemedText style={styles.error}>{error}</ThemedText>
@@ -75,6 +87,29 @@ const styles = StyleSheet.create({
     },
     hint: {
         textAlign: 'center',
+        color: colors.textSecondary,
+    },
+    pinContainer: {
+        alignItems: 'center',
+        marginBottom: spacing.l,
+        padding: spacing.m,
+        backgroundColor: colors.card,
+        borderRadius: spacing.m,
+        width: '100%',
+    },
+    pinLabel: {
+        fontSize: 14,
+        color: colors.textSecondary,
+        marginBottom: spacing.s,
+    },
+    pinValue: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: colors.primary,
+        marginBottom: spacing.s,
+    },
+    pinHint: {
+        fontSize: 12,
         color: colors.textSecondary,
     },
 });

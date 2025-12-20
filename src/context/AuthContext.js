@@ -1,159 +1,126 @@
-// Ce fichier gère tout ce qui concerne l'authentification de l'utilisateur
-// Il permet de se connecter, s'inscrire, se déconnecter et changer ses identifiants
-
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { hashPassword } from '../utils/crypto';
+import { deriveKey, generateSalt, encrypt, decrypt } from '../services/EncryptionService';
 
-// On crée un contexte pour pouvoir accéder aux données d'auth depuis n'importe où dans l'app
 const AuthContext = createContext();
 
-// Hook personnalisé pour utiliser facilement le contexte d'authentification
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-    // Est-ce que l'utilisateur est connecté ou pas
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [masterKey, setMasterKey] = useState(null); // Memory only
+    const [user, setUser] = useState(null); // Current user
+    const [usersList, setUsersList] = useState([]); // List of registered usernames
+    const [isInitialized, setIsInitialized] = useState(false);
+    const [loading, setLoading] = useState(true);
 
-    // Les informations de l'utilisateur connecté (son nom d'utilisateur par exemple)
-    const [user, setUser] = useState(null);
-
-    // La clé maître gardée en mémoire pour chiffrer/déchiffrer les données du coffre
-    // On ne la stocke jamais sur le disque pour des raisons de sécurité
-    const [masterKey, setMasterKey] = useState(null);
-
-    // Indique si on est en train de vérifier l'état de connexion au démarrage
-    const [isLoading, setIsLoading] = useState(true);
-
-    // Est-ce que c'est la première fois que l'utilisateur lance l'app
-    const [isFirstLaunch, setIsFirstLaunch] = useState(false);
-
-    // Au lancement de l'app, on vérifie si un utilisateur existe déjà
     useEffect(() => {
-        checkAuthStatus();
+        checkInitialization();
     }, []);
 
-    // Cette fonction vérifie si un compte existe déjà dans le stockage local
-    const checkAuthStatus = async () => {
+    const checkInitialization = async () => {
         try {
-            const storedUser = await AsyncStorage.getItem('vaultx_user');
-            const storedHash = await AsyncStorage.getItem('vaultx_hash');
-
-            // Si on ne trouve pas d'utilisateur ou de mot de passe, c'est le premier lancement
-            if (!storedUser || !storedHash) {
-                setIsFirstLaunch(true);
-            }
+            // Load list of users
+            const usersJson = await AsyncStorage.getItem('vault_users');
+            const users = usersJson ? JSON.parse(usersJson) : [];
+            setUsersList(users);
+            setIsInitialized(true);
         } catch (e) {
-            console.error('Erreur lors de la vérification du statut', e);
+            console.error("Auth init check failed", e);
         } finally {
-            setIsLoading(false);
+            setLoading(false);
         }
     };
 
-    // Fonction pour créer un nouveau compte (premier lancement)
+    // Register a NEW User
     const register = async (username, password) => {
         try {
-            // On hash le mot de passe avant de le stocker (jamais en clair!)
-            const hash = hashPassword(password);
-            await AsyncStorage.setItem('vaultx_user', username);
-            await AsyncStorage.setItem('vaultx_hash', hash);
+            if (usersList.includes(username)) return false; // Already exists
 
+            const salt = await generateSalt();
+            const key = deriveKey(password, salt);
+
+            const verifierText = "VAULT_VERIFIED";
+            const encryptedVerifier = await encrypt(verifierText, key);
+
+            // Store user-specific security params
+            await AsyncStorage.setItem(`vault_salt_${username}`, salt);
+            await AsyncStorage.setItem(`vault_verifier_${username}`, encryptedVerifier);
+
+            // Update user list
+            const newUsersList = [...usersList, username];
+            await AsyncStorage.setItem('vault_users', JSON.stringify(newUsersList));
+            setUsersList(newUsersList);
+
+            // Auto-login
+            setMasterKey(key);
             setUser({ username });
-            // On garde le mot de passe brut en mémoire car c'est lui qui sert de clé de chiffrement
-            setMasterKey(password);
-            setIsAuthenticated(true);
-            setIsFirstLaunch(false);
-            return true;
+            return { success: true, key }; // Return key for display
         } catch (e) {
-            console.error('Échec de l\'inscription', e);
-            return false;
+            console.error("Registration failed", e);
+            return { success: false, error: e };
         }
     };
 
-    // Fonction pour se connecter avec un compte existant
+    // Login EXISTING User
     const login = async (username, password) => {
         try {
-            const storedUser = await AsyncStorage.getItem('vaultx_user');
-            const storedHash = await AsyncStorage.getItem('vaultx_hash');
+            if (!usersList.includes(username)) return false;
 
-            // On vérifie que le nom d'utilisateur et le hash correspondent
-            if (storedUser === username && storedHash === hashPassword(password)) {
+            const salt = await AsyncStorage.getItem(`vault_salt_${username}`);
+            const verifier = await AsyncStorage.getItem(`vault_verifier_${username}`);
+
+            if (!salt || !verifier) return false;
+
+            const key = deriveKey(password, salt);
+            const decryptedVerifier = decrypt(verifier, key);
+
+            if (decryptedVerifier === "VAULT_VERIFIED") {
+                setMasterKey(key);
                 setUser({ username });
-                setMasterKey(password);
-                setIsAuthenticated(true);
                 return true;
+            } else {
+                return false;
             }
-            return false;
         } catch (e) {
-            console.error('Échec de la connexion', e);
+            console.error("Login failed", e);
             return false;
         }
     };
 
-    // Fonction pour se déconnecter - on efface tout de la mémoire
     const logout = () => {
-        setIsAuthenticated(false);
-        setUser(null);
         setMasterKey(null);
+        setUser(null);
     };
 
-    // Fonction pour changer le nom d'utilisateur
-    const updateUsername = async (newUsername) => {
+    const resetAll = async () => {
         try {
-            // On vérifie que le nouveau nom n'est pas vide
-            if (!newUsername || newUsername.trim() === '') {
-                return { success: false, error: 'Le nom d\'utilisateur ne peut pas être vide' };
-            }
-            await AsyncStorage.setItem('vaultx_user', newUsername.trim());
-            setUser({ username: newUsername.trim() });
-            return { success: true };
+            await AsyncStorage.clear();
+            const { resetDatabase } = require('../services/DatabaseService');
+            await resetDatabase();
+            setMasterKey(null);
+            setUser(null);
+            setUsersList([]);
+            return true;
         } catch (e) {
-            console.error('Échec de la mise à jour du nom d\'utilisateur', e);
-            return { success: false, error: 'Impossible de mettre à jour le nom' };
+            console.error("Reset failed", e);
+            return false;
         }
     };
 
-    // Fonction pour changer le mot de passe
-    const updatePassword = async (currentPassword, newPassword) => {
-        try {
-            // Le nouveau mot de passe doit faire au moins 4 caractères
-            if (!newPassword || newPassword.length < 4) {
-                return { success: false, error: 'Le mot de passe doit faire au moins 4 caractères' };
-            }
-
-            // On vérifie d'abord que l'ancien mot de passe est correct
-            const storedHash = await AsyncStorage.getItem('vaultx_hash');
-            if (storedHash !== hashPassword(currentPassword)) {
-                return { success: false, error: 'Le mot de passe actuel est incorrect' };
-            }
-
-            // Si tout est bon, on enregistre le nouveau mot de passe hashé
-            const newHash = hashPassword(newPassword);
-            await AsyncStorage.setItem('vaultx_hash', newHash);
-            setMasterKey(newPassword);
-            return { success: true };
-        } catch (e) {
-            console.error('Échec de la mise à jour du mot de passe', e);
-            return { success: false, error: 'Impossible de mettre à jour le mot de passe' };
-        }
-    };
-
-    // On rend toutes ces valeurs et fonctions disponibles pour le reste de l'app
     return (
-        <AuthContext.Provider
-            value={{
-                isAuthenticated,
-                user,
-                masterKey,
-                isLoading,
-                isFirstLaunch,
-                register,
-                login,
-                logout,
-                updateUsername,
-                updatePassword,
-            }}
-        >
+        <AuthContext.Provider value={{
+            masterKey,
+            user,
+            usersList,
+            isInitialized,
+            isLoading: loading,
+            isAuthenticated: !!masterKey,
+            isFirstLaunch: usersList.length === 0, // True if NO users exist
+            register,
+            login,
+            logout,
+            resetAll
+        }}>
             {children}
         </AuthContext.Provider>
     );

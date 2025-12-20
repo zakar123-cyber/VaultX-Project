@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function AccountScreen() {
     const colors = useThemeColors();
-    const { user, updateUsername, updatePassword } = useAuth();
+    const { user, updateUsername, updatePassword, resetAll } = useAuth();
 
     // États pour le popup de changement de nom d'utilisateur
     const [showUsernameModal, setShowUsernameModal] = useState(false);
@@ -128,6 +128,30 @@ export default function AccountScreen() {
                             Toutes les données du coffre sont chiffrées localement avec AES-256 en utilisant votre mot de passe maître.
                         </ThemedText>
                     </View>
+                </View>
+
+                {/* Bouton pour réinitialiser complètement l'application */}
+                <View style={styles.resetContainer}>
+                    <ThemedButton
+                        title="Restart (Tout Réinitialiser)"
+                        onPress={() => {
+                            Alert.alert(
+                                'Redémarrer VaultX',
+                                'Cela va supprimer TOUTES vos données, votre compte et les paramètres. Êtes-vous sûr ?',
+                                [
+                                    { text: 'Annuler', style: 'cancel' },
+                                    {
+                                        text: 'Oui, tout effacer',
+                                        style: 'destructive',
+                                        onPress: () => resetAll(),
+                                    },
+                                ]
+                            );
+                        }}
+                        style={styles.resetButton}
+                        textStyle={{ color: colors.danger }}
+                        variant="secondary"
+                    />
                 </View>
             </ScrollView>
 
@@ -292,6 +316,12 @@ const styles = StyleSheet.create({
     infoText: {
         fontSize: 13,
         lineHeight: 18,
+    },
+    resetContainer: {
+        marginTop: spacing.xl,
+    },
+    resetButton: {
+        borderRadius: borderRadius.l,
     },
     // Styles des popups
     modalTitle: {

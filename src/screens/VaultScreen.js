@@ -1,11 +1,13 @@
 // Écran principal du coffre-fort
 // C'est ici qu'on affiche tous les éléments stockés dans le coffre
 
-import React from 'react';
-import { FlatList, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { ThemedView, ThemedText, FAB, useThemeColors } from '../components/ThemedComponents';
+import React, { useState } from 'react';
+import { FlatList, StyleSheet, TouchableOpacity, View, Alert } from 'react-native';
+import { ThemedView, ThemedText, ThemedInput, ThemedButton, FAB, useThemeColors } from '../components/ThemedComponents';
+import { ThemedModal } from '../components/ThemedModal';
 import { useVault } from '../context/VaultContext';
 import { useSettings } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 import { spacing, borderRadius } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -14,7 +16,11 @@ export default function VaultScreen({ navigation }) {
     const { items } = useVault();
     // On récupère les paramètres (verrouillage, catégories, etc.)
     const { isVaultLocked, toggleVaultLock, categories } = useSettings();
+    const { masterKey } = useAuth();
     const colors = useThemeColors();
+
+    const [showUnlockModal, setShowUnlockModal] = useState(false);
+    const [unlockCode, setUnlockCode] = useState('');
 
     // Cette fonction trouve l'icône correspondant à une catégorie
     const getCategoryIcon = (categoryId) => {
@@ -78,7 +84,16 @@ export default function VaultScreen({ navigation }) {
                             backgroundColor: isVaultLocked ? colors.danger : colors.success,
                         }
                     ]}
-                    onPress={toggleVaultLock}
+                    onPress={() => {
+                        if (isVaultLocked) {
+                            // Si verrouillé, on demande le code de déverrouillage
+                            setUnlockCode('');
+                            setShowUnlockModal(true);
+                        } else {
+                            // Si déjà déverrouillé, on verrouille directement
+                            toggleVaultLock();
+                        }
+                    }}
                 >
                     <ThemedText style={styles.encryptionButtonText}>
                         {isVaultLocked ? 'Déverrouiller' : 'Verrouiller'}
@@ -113,6 +128,52 @@ export default function VaultScreen({ navigation }) {
                     onPress={() => navigation.navigate('Detail', { itemId: null })}
                 />
             )}
+
+            {/* Popup pour entrer le code de déverrouillage */}
+            <ThemedModal
+                visible={showUnlockModal}
+                onClose={() => setShowUnlockModal(false)}
+                size="small"
+            >
+                <ThemedText type="header" style={{ marginBottom: spacing.m }}>
+                    Entrer le code de déverrouillage
+                </ThemedText>
+                <ThemedText style={{ marginBottom: spacing.s, color: colors.textSecondary }}>
+                    Saisissez votre mot de passe maître généré pour déverrouiller le coffre.
+                </ThemedText>
+                <ThemedInput
+                    label="Code"
+                    value={unlockCode}
+                    onChangeText={setUnlockCode}
+                    secureTextEntry
+                />
+                <View style={{ flexDirection: 'row', marginTop: spacing.m, gap: spacing.m }}>
+                    <ThemedButton
+                        title="Annuler"
+                        variant="secondary"
+                        onPress={() => setShowUnlockModal(false)}
+                        style={{ flex: 1 }}
+                    />
+                    <ThemedButton
+                        title="Déverrouiller"
+                        onPress={() => {
+                            if (!masterKey) {
+                                Alert.alert('Erreur', 'Session invalide, veuillez vous reconnecter.');
+                                setShowUnlockModal(false);
+                                return;
+                            }
+                            if (unlockCode === masterKey) {
+                                toggleVaultLock();
+                                setShowUnlockModal(false);
+                                setUnlockCode('');
+                            } else {
+                                Alert.alert('Erreur', 'Code incorrect.');
+                            }
+                        }}
+                        style={{ flex: 1 }}
+                    />
+                </View>
+            </ThemedModal>
         </ThemedView>
     );
 }
