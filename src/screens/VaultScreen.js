@@ -3,6 +3,7 @@
 
 import React, { useState } from 'react';
 import { FlatList, StyleSheet, TouchableOpacity, View, Alert } from 'react-native';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { ThemedView, ThemedText, ThemedInput, ThemedButton, FAB, useThemeColors } from '../components/ThemedComponents';
 import { ThemedModal } from '../components/ThemedModal';
 import { useVault } from '../context/VaultContext';
@@ -15,7 +16,7 @@ export default function VaultScreen({ navigation }) {
     // On récupère les éléments du coffre
     const { items } = useVault();
     // On récupère les paramètres (verrouillage, catégories, etc.)
-    const { isVaultLocked, toggleVaultLock, categories } = useSettings();
+    const { isVaultLocked, toggleVaultLock, categories, isBiometricsEnabled } = useSettings();
     const { masterKey } = useAuth();
     const colors = useThemeColors();
 
@@ -156,16 +157,39 @@ export default function VaultScreen({ navigation }) {
                     />
                     <ThemedButton
                         title="Déverrouiller"
-                        onPress={() => {
+                        onPress={async () => {
                             if (!masterKey) {
                                 Alert.alert('Erreur', 'Session invalide, veuillez vous reconnecter.');
                                 setShowUnlockModal(false);
                                 return;
                             }
                             if (unlockCode === masterKey) {
-                                toggleVaultLock();
-                                setShowUnlockModal(false);
-                                setUnlockCode('');
+                                // 1. Password Correct. Now check for Fingerprint support.
+                                const hasHardware = await LocalAuthentication.hasHardwareAsync();
+                                const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+                                const hasFingerprint = types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT);
+
+                                if (hasHardware && hasFingerprint && isBiometricsEnabled) {
+                                    // 2. Fingerprint Available -> Enforce it
+                                    const result = await LocalAuthentication.authenticateAsync({
+                                        promptMessage: 'Authentification par empreinte requise',
+                                        disableDeviceFallback: true,
+                                        cancelLabel: 'Annuler'
+                                    });
+
+                                    if (result.success) {
+                                        toggleVaultLock();
+                                        setShowUnlockModal(false);
+                                        setUnlockCode('');
+                                    } else {
+                                        Alert.alert('Echec', 'Empreinte non reconnue.');
+                                    }
+                                } else {
+                                    // 3. No Fingerprint -> Skip 2nd layer
+                                    toggleVaultLock();
+                                    setShowUnlockModal(false);
+                                    setUnlockCode('');
+                                }
                             } else {
                                 Alert.alert('Erreur', 'Code incorrect.');
                             }

@@ -87,7 +87,9 @@ export const decrypt = (encryptedData, key) => {
 
         return decrypted.toString(CryptoJS.enc.Utf8);
     } catch (e) {
-        console.error("Decryption failed. Input was:", encryptedData ? encryptedData.substring(0, 50) : "null", "Error:", e);
-        return null; // Or throw error
+        // Warn instead of Error, because decryption failure is an expected state 
+        // when checking if a key matches (e.g. during import of another user's backup).
+        console.warn("Decryption failed/checked (likely wrong key). Error:", e.message);
+        return null;
     }
 };

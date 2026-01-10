@@ -21,6 +21,7 @@ import AccountScreen from '../screens/AccountScreen';
 import { ThemedText, ThemedView, useThemeColors } from '../components/ThemedComponents';
 import { View, TouchableOpacity, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { initNotifications } from '../services/NotificationService';
 
 // On crée les navigateurs - Drawer pour le menu latéral, Stack pour les pages empilées
 const Drawer = createDrawerNavigator();
@@ -174,6 +175,13 @@ function AppDrawer() {
 // Le navigateur principal qui décide quelle page afficher
 export default function AppNavigator() {
     const { isAuthenticated, isLoading } = useAuth();
+
+    // Init Notifications on app start
+    React.useEffect(() => {
+        initNotifications().then(granted => {
+            console.log("Notification Permissions:", granted);
+        });
+    }, []);
 
     // On essaie de récupérer le thème, sinon on utilise le thème sombre par défaut
     let isDarkMode = true;

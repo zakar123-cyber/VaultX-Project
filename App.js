@@ -24,8 +24,8 @@ export default function App() {
     // GestureHandlerRootView est nécessaire pour que les gestes fonctionnent correctement
     <GestureHandlerRootView style={{ flex: 1 }}>
       {/* On enveloppe l'app avec les différents providers pour partager les données */}
-      <SettingsProvider>
-        <AuthProvider>
+      <AuthProvider>
+        <SettingsProvider>
           <VaultProvider>
             {/* La barre d'état s'adapte automatiquement au thème */}
             <StatusBar style="auto" />
@@ -38,8 +38,8 @@ export default function App() {
               <SplashScreen onAnimationComplete={handleSplashComplete} />
             )}
           </VaultProvider>
-        </AuthProvider>
-      </SettingsProvider>
+        </SettingsProvider>
+      </AuthProvider>
     </GestureHandlerRootView>
   );
 }

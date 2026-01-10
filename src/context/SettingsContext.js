@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './AuthContext';
 
 const SettingsContext = createContext();
 
@@ -61,17 +62,21 @@ const DEFAULT_GROUPS = [
 ];
 
 export const SettingsProvider = ({ children }) => {
+    const { user } = useAuth();
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
     const [groups, setGroups] = useState(DEFAULT_GROUPS);
     const [isVaultLocked, setIsVaultLocked] = useState(false);
+    const [isBiometricsEnabled, setIsBiometricsEnabled] = useState(false);
+    const [isAutoBackupEnabled, setIsAutoBackupEnabled] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         loadSettings();
-    }, []);
+    }, [user]); // Reload if user changes
 
     const loadSettings = async () => {
+        setIsLoading(true);
         try {
             const storedTheme = await AsyncStorage.getItem('vaultx_theme');
             const storedCategories = await AsyncStorage.getItem('vaultx_categories');
@@ -82,11 +87,34 @@ export const SettingsProvider = ({ children }) => {
             if (storedCategories) setCategories(JSON.parse(storedCategories));
             if (storedGroups) setGroups(JSON.parse(storedGroups));
             if (storedLockState !== null) setIsVaultLocked(storedLockState === 'true');
+
+            // Load Auto Backup Setting
+            const storedBackup = await AsyncStorage.getItem('vaultx_backup_enabled');
+            setIsAutoBackupEnabled(storedBackup === 'true');
+
+            // Load User-Specific Biometric Setting
+            if (user?.username) {
+                const storedBio = await AsyncStorage.getItem(`vaultx_bio_${user.username}`);
+                setIsBiometricsEnabled(storedBio === 'true');
+            } else {
+                setIsBiometricsEnabled(false);
+            }
         } catch (e) {
             console.error('Failed to load settings', e);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const toggleBiometrics = async (enabled) => {
+        if (!user?.username) return;
+        setIsBiometricsEnabled(enabled);
+        await AsyncStorage.setItem(`vaultx_bio_${user.username}`, enabled.toString());
+    };
+
+    const toggleAutoBackup = async (enabled) => {
+        setIsAutoBackupEnabled(enabled);
+        await AsyncStorage.setItem('vaultx_backup_enabled', enabled.toString());
     };
 
     const saveSettings = async (key, value) => {
@@ -166,6 +194,10 @@ export const SettingsProvider = ({ children }) => {
                 deleteGroup,
                 isVaultLocked,
                 toggleVaultLock,
+                isBiometricsEnabled,
+                toggleBiometrics,
+                isAutoBackupEnabled,
+                toggleAutoBackup,
                 isLoading,
             }}
         >

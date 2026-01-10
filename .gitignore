@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Sensitive - DO NOT COMMIT
+google-services.json
+src/services/firebaseConfig.js
+.env
+.env.*

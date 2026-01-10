@@ -1,6 +1,17 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { deriveKey, generateSalt, encrypt, decrypt } from '../services/EncryptionService';
+import {
+    signOut,
+    GoogleAuthProvider,
+    signInWithCredential,
+    onAuthStateChanged
+} from 'firebase/auth';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import { auth } from '../services/firebaseConfig';
+import { Alert } from 'react-native';
+
+
 
 const AuthContext = createContext();
 
@@ -12,6 +23,19 @@ export const AuthProvider = ({ children }) => {
     const [usersList, setUsersList] = useState([]); // List of registered usernames
     const [isInitialized, setIsInitialized] = useState(false);
     const [loading, setLoading] = useState(true);
+
+    // --- CLOUD AUTH STATE ---
+    const [cloudUser, setCloudUser] = useState(null);
+    const [cloudLoading, setCloudLoading] = useState(true);
+
+    // Monitor Firebase Auth State
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setCloudUser(user);
+            setCloudLoading(false);
+        });
+        return unsubscribe;
+    }, []);
 
     useEffect(() => {
         checkInitialization();
@@ -32,9 +56,16 @@ export const AuthProvider = ({ children }) => {
     };
 
     // Register a NEW User
-    const register = async (username, password) => {
+    const register = async (username, password, forceReset = false) => {
         try {
-            if (usersList.includes(username)) return false; // Already exists
+            if (!forceReset && usersList.includes(username)) return false; // Already exists
+
+            if (forceReset) {
+                // Clear everything first
+                await AsyncStorage.clear();
+                const { resetDatabase } = require('../services/DatabaseService');
+                await resetDatabase();
+            }
 
             const salt = await generateSalt();
             const key = deriveKey(password, salt);
@@ -47,7 +78,7 @@ export const AuthProvider = ({ children }) => {
             await AsyncStorage.setItem(`vault_verifier_${username}`, encryptedVerifier);
 
             // Update user list
-            const newUsersList = [...usersList, username];
+            const newUsersList = forceReset ? [username] : [...usersList, username];
             await AsyncStorage.setItem('vault_users', JSON.stringify(newUsersList));
             setUsersList(newUsersList);
 
@@ -107,6 +138,66 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    // --- CLOUD AUTH FUNCTIONS ---
+
+    // --- CLOUD AUTH FUNCTIONS (GOOGLE) ---
+
+
+    // ...
+
+    // --- CLOUD AUTH FUNCTIONS (GOOGLE - NATIVE) ---
+    // Using @react-native-google-signin/google-signin for Development Build
+
+    useEffect(() => {
+        try {
+            GoogleSignin.configure({
+                webClientId: "761563254420-sr2dom03ru0f41euon8crqc4vffgbbs8.apps.googleusercontent.com",
+            });
+        } catch (e) {
+            console.error("Google Signin Configure Error", e);
+        }
+    }, []);
+
+    const promptGoogleLogin = async () => {
+        console.log("Starting Native Google Auth...");
+        try {
+            await GoogleSignin.hasPlayServices();
+            const userInfo = await GoogleSignin.signIn();
+            console.log("Native Google Sign-In Success:", userInfo);
+
+            // Retrieve the ID Token
+            const idToken = userInfo.data?.idToken || userInfo.idToken;
+            if (!idToken) {
+                throw new Error("No ID Token found in response");
+            }
+
+            const credential = GoogleAuthProvider.credential(idToken);
+            await signInWithCredential(auth, credential);
+        } catch (error) {
+            console.error("Google Sign-In Error", error);
+            if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+                // User cancelled
+                console.log("User cancelled login");
+            } else if (error.code === statusCodes.IN_PROGRESS) {
+                // Operation in progress
+                Alert.alert("Info", "Connexion déjà en cours...");
+            } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+                Alert.alert("Erreur", "Google Play Services non disponible.");
+            } else {
+                Alert.alert("Erreur", "Échec de la connexion Google: " + error.message);
+            }
+        }
+    };
+
+    const cloudLogout = async () => {
+        try {
+            await signOut(auth);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    };
+
     return (
         <AuthContext.Provider value={{
             masterKey,
@@ -119,7 +210,13 @@ export const AuthProvider = ({ children }) => {
             register,
             login,
             logout,
-            resetAll
+            resetAll,
+
+            cloudUser,
+            isCloudAuthenticated: !!cloudUser,
+            isCloudVerified: cloudUser?.emailVerified,
+            cloudLogout,
+            promptGoogleLogin
         }}>
             {children}
         </AuthContext.Provider>

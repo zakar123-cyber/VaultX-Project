@@ -1,8 +1,9 @@
 // Écran de détail d'un élément (création ou modification)
 // C'est ici qu'on ajoute ou modifie les informations d'un élément du coffre
 
-import React, { useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, View, Alert, TouchableOpacity, FlatList } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, View, Alert, TouchableOpacity, FlatList, Platform } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { ThemedView, ThemedText, ThemedButton, ThemedInput, useThemeColors } from '../components/ThemedComponents';
 import { ThemedModal } from '../components/ThemedModal';
 import { useVault } from '../context/VaultContext';
@@ -34,6 +35,9 @@ export default function DetailScreen({ route, navigation }) {
     // États des popups de sélection
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showGroupModal, setShowGroupModal] = useState(false);
+
+    // Référence pour le ScrollView
+    const scrollViewRef = useRef(null);
 
     // On récupère les champs de la catégorie sélectionnée
     const currentCategory = categories.find(c => c.id === selectedCategory || c.name === selectedCategory);
@@ -138,7 +142,15 @@ export default function DetailScreen({ route, navigation }) {
 
     return (
         <ThemedView style={styles.container}>
-            <ScrollView contentContainerStyle={styles.content}>
+            <KeyboardAwareScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={[styles.content, { paddingBottom: 200 }]}
+                enableOnAndroid={true}
+                extraScrollHeight={200}
+                keyboardShouldPersistTaps="handled"
+                enableAutomaticScroll={true}
+                enableResetScrollToCoords={false}
+            >
                 {/* En-tête avec le titre et le bouton modifier */}
                 <View style={styles.header}>
                     <ThemedText type="header">
@@ -275,7 +287,7 @@ export default function DetailScreen({ route, navigation }) {
                         ))}
                     </View>
                 )}
-            </ScrollView>
+            </KeyboardAwareScrollView>
 
             {/* Popup de sélection de catégorie */}
             <ThemedModal visible={showCategoryModal} onClose={() => setShowCategoryModal(false)} size="medium">
@@ -364,7 +376,7 @@ export default function DetailScreen({ route, navigation }) {
                     onPress={() => setShowGroupModal(false)}
                 />
             </ThemedModal>
-        </ThemedView>
+        </ThemedView >
     );
 }
 

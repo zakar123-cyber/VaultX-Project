@@ -90,12 +90,9 @@ export const ThemedModal = ({
     };
 
     // Calcule la hauteur max selon la taille choisie
+    // Calcule la hauteur max - on laisse de la place (90% de l'écran) pour éviter de couper
     const getMaxHeight = () => {
-        switch (size) {
-            case 'small': return SCREEN_HEIGHT * 0.5;
-            case 'large': return SCREEN_HEIGHT * 0.85;
-            default: return SCREEN_HEIGHT * 0.75;
-        }
+        return SCREEN_HEIGHT * 0.9;
     };
 
     return (

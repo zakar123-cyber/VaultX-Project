@@ -6,8 +6,12 @@ import { ScrollView, StyleSheet, View, Alert, TouchableOpacity, Text } from 'rea
 import { ThemedView, ThemedText, ThemedButton, ThemedSwitch, ThemedCard, ThemedInput, useThemeColors } from '../components/ThemedComponents';
 import { ThemedModal } from '../components/ThemedModal';
 import { useSettings, GROUP_ICONS } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
+import { useVault } from '../context/VaultContext'; // Import useVault
+import { useNavigation } from '@react-navigation/native';
 import { spacing, borderRadius } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
+import * as LocalAuthentication from 'expo-local-authentication';
 
 // Liste des icônes disponibles pour les catégories et groupes
 const ICONS = ['folder', 'lock-closed', 'card', 'mail', 'document-text', 'key', 'wallet', 'globe', 'person', 'briefcase', 'home', 'car', 'airplane', 'laptop', 'phone-portrait'];
@@ -34,7 +38,92 @@ export default function SettingsScreen() {
         addGroup,
         updateGroup,
         deleteGroup,
+        isBiometricsEnabled,
+        toggleBiometrics,
+        isAutoBackupEnabled,
+        toggleAutoBackup
     } = useSettings();
+    const { cloudUser, isCloudAuthenticated, promptGoogleLogin, cloudLogout } = useAuth();
+    const { triggerAutoBackup } = useVault(); // Get trigger function
+    const navigation = useNavigation();
+
+    const handleAutoBackupToggle = (value) => {
+        if (value) {
+            // Turning ON
+            if (!isCloudAuthenticated) {
+                // ... login prompt ...
+                Alert.alert(
+                    "Authentification Requise",
+                    "Connectez-vous avec Google pour activer la sauvegarde dans le cloud.",
+                    [
+                        { text: "Annuler", style: "cancel" },
+                        { text: "Se connecter (Google)", onPress: () => promptGoogleLogin() }
+                    ]
+                );
+                return;
+            }
+            toggleAutoBackup(true);
+
+            // IMMEDIATE ACTION: Trigger backup now!
+            triggerAutoBackup();
+
+            Alert.alert("Succès", "Sauvegarde automatique activée (Synchronisation lancée).");
+        } else {
+            // Turning OFF
+            toggleAutoBackup(false);
+        }
+    };
+
+    const handleBiometricToggle = async (value) => {
+        // Common checks for hardware
+        const hasHardware = await LocalAuthentication.hasHardwareAsync();
+        const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+        // Check strictly for FINGERPRINT if user wants "only fingerprint"
+        // usage: types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)
+        const hasFingerprint = types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT);
+
+        if (!hasHardware || !hasFingerprint) {
+            Alert.alert("Erreur", "L'authentification par empreinte n'est pas disponible sur cet appareil.");
+            return;
+        }
+
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+        if (!isEnrolled) {
+            Alert.alert("Erreur", "Aucune empreinte enregistrée sur cet appareil.");
+            return;
+        }
+
+        if (value) {
+            // Turning ON -> Just enable (since we verified hardware exists)
+            toggleBiometrics(true);
+        } else {
+            // Turning OFF -> REQUIRE VERIFICATION (Fingerprint Only)
+            try {
+                const result = await LocalAuthentication.authenticateAsync({
+                    promptMessage: "Confirmez votre empreinte pour désactiver",
+                    disableDeviceFallback: true, // Strickly no PIN/Pattern
+                    cancelLabel: "Annuler"
+                });
+
+                if (result.success) {
+                    toggleBiometrics(false);
+                } else {
+                    // Start of error handling
+                    // If user cancels, we just do nothing (switch stays ON).
+                    // We only show alert if it's a specific error the user should know about?
+                    // User complained about "desactivation annuler".
+                    // If they just hit cancel, silence is golden?
+                    // But if it fails for other reasons, show it.
+                    if (result.error !== 'user_cancel' && result.error !== 'system_cancel') {
+                        Alert.alert("Erreur", "Authentification échouée. Impossible de désactiver.");
+                    }
+                }
+            } catch (e) {
+                console.error("Bio Error", e);
+                Alert.alert("Erreur", "Erreur technique lors de l'authentification.");
+            }
+        }
+    };
 
     // États pour le popup de gestion des catégories
     const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -198,6 +287,44 @@ export default function SettingsScreen() {
                         value={isDarkMode}
                         onValueChange={toggleTheme}
                     />
+                </ThemedCard>
+
+                {/* Security Section */}
+                <ThemedText type="subHeader" style={styles.sectionTitle}>Sécurité</ThemedText>
+                <ThemedCard>
+                    <ThemedSwitch
+                        label={isBiometricsEnabled ? "🔒 Biométrie activée" : "🔓 Biométrie désactivée"}
+                        value={isBiometricsEnabled}
+                        onValueChange={handleBiometricToggle}
+                    />
+                </ThemedCard>
+
+                {/* Backup Section */}
+                <ThemedText type="subHeader" style={styles.sectionTitle}>Sauvegarde</ThemedText>
+                <ThemedCard>
+                    <ThemedSwitch
+                        label={isAutoBackupEnabled ? "☁️ Sauvegarde Auto (Activée)" : "☁️ Sauvegarde Auto (Désactivée)"}
+                        value={isAutoBackupEnabled}
+                        onValueChange={handleAutoBackupToggle}
+                    />
+                    <TouchableOpacity
+                        style={{ marginTop: spacing.m, paddingTop: spacing.m, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.1)' }}
+                        onPress={() => {
+                            if (isCloudAuthenticated) {
+                                Alert.alert("Compte Cloud", `Connecté en tant que: ${cloudUser.email}`, [
+                                    { text: "Fermer" },
+                                    { text: "Se déconnecter", style: "destructive", onPress: cloudLogout }
+                                ]);
+                            } else {
+                                promptGoogleLogin();
+                            }
+                        }}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <ThemedText>{isCloudAuthenticated ? "Gérer le compte (Connecté)" : "Se connecter (Google)"}</ThemedText>
+                            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                        </View>
+                    </TouchableOpacity>
                 </ThemedCard>
 
                 {/* Categories Section */}
